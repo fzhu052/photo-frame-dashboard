@@ -64,6 +64,8 @@ let CLINE_VERSION = null;
 execFile('cline', ['--version'], { timeout: 4000, encoding: 'utf8' }, (err, out) => {
   if (!err && out) CLINE_VERSION = out.trim().split('\n').pop();
 });
+let GPU_NAME = null;
+try { GPU_NAME = execFileSync('/usr/sbin/sysctl', ['-n', 'machdep.cpu.brand_string'], { encoding: 'utf8', timeout: 3000 }).trim() || null; } catch { /* leave null */ }
 
 // ------------------------------------------------------------------ helpers
 function readJson(file) {
@@ -250,41 +252,35 @@ function collectTeams() {
     .slice(0, 6);
 }
 
-// ---------------------------------------------------------------- system
-// Host vitals for the wall's tile strip. Every field is optional-tolerant —
-// the view hides a tile when its metric is missing. `memory_pressure` uses
-// macOS's /usr/bin/memory_pressure ("System-wide memory free percentage",
-// which counts reclaimable pages); falls back to node:os free/total.
+// ---------------------------------------------------------------- vram
+// Single wall tile: GPU memory. Apple Silicon has no discrete VRAM — the GPU
+// shares the unified pool, and without root there's no per-GPU counter, so
+// the honest reading is used/total unified memory: exactly what a local
+// model (Ollama, LM Studio, MLX) consumes. Like before, raw os.freemem()
+// under-reports free space on macOS (excludes reclaimable/purgeable pages),
+// so `memory_pressure` ("System-wide memory free percentage") is primary and
+// node:os is the fallback — `src` says which was used. `name` is the chip.
 function lvl(x, okAt, warnAt) {
   return x == null || !isFinite(x) ? null : x < okAt ? 'ok' : x < warnAt ? 'warn' : 'crit';
 }
-function collectSystem() {
-  const cores = os.cpus().length;
-  const load = os.loadavg();
-  const total = os.totalmem(), free = os.freemem();
-  let freePct = Math.round((free / total) * 1000) / 10, memSrc = 'node';
+function collectVram() {
+  const total = os.totalmem();
+  let freePct = (os.freemem() / total) * 100, src = 'node';
   if (process.platform === 'darwin') {
     try {
       const out = execFileSync('/usr/bin/memory_pressure', [], { encoding: 'utf8', timeout: 3000 });
       const m = out.match(/System-wide memory free percentage:\s*([\d.]+)%/i);
-      if (m) { freePct = parseFloat(m[1]); memSrc = 'macos'; }
+      if (m) { freePct = parseFloat(m[1]); src = 'macos'; }
     } catch { /* keep the node estimate */ }
   }
-  let disk = null;
-  try {
-    const out = execFileSync('df', ['-k', '/'], { encoding: 'utf8', timeout: 3000 });
-    const p = out.trim().split('\n').pop().split(/\s+/);
-    if (p.length >= 5) disk = { total_gb: Math.round(+p[1] / 1048576), free_gb: Math.round(+p[3] / 1048576), used_pct: parseInt(p[4], 10) };
-  } catch { /* leave disk null */ }
+  const pct = Math.round(100 - freePct);
   return {
-    cpu: { cores, load: load.map((x) => Math.round(x * 100) / 100), level: lvl(load[0] / cores, 1, 2.5) },
-    mem: { total_mb: Math.round(total / 1048576), free_mb: Math.round(free / 1048576), free_pct: freePct, src: memSrc, level: lvl(100 - freePct, 80, 90) },
-    disk: disk ? { ...disk, level: lvl(disk.used_pct, 85, 95) } : null,
-    uptime_s: Math.floor(os.uptime()),
-    push: WALL_URL
-      ? { enabled: true, ok: pushOk, last_ok_at: pushOkAt || null, fails: pushFails, last_err: pushErr || null,
-          level: pushOk === true ? (Date.now() - pushOkAt < 60000 ? 'ok' : 'warn') : 'crit' }
-      : { enabled: false },
+    name: GPU_NAME,
+    src,
+    total_gb: Math.round(total / 1073741824 * 10) / 10,
+    used_gb: Math.round(total * (1 - freePct / 100) / 1073741824 * 10) / 10,
+    pct,
+    level: lvl(pct, 80, 92),
   };
 }
 
@@ -338,12 +334,11 @@ function collect() {
     sessions,
     teams: collectTeams(),
     schedules,
-    system: collectSystem(),
+    vram: collectVram(),
   };
 }
 
 // ------------------------------------------------------------------- push
-let pushOk = null, pushOkAt = 0, pushFails = 0, pushErr = '';
 async function push(json) {
   if (!WALL_URL) return true;
   try {
@@ -355,14 +350,9 @@ async function push(json) {
       },
       body: json,
     });
-    if (res.ok) { pushOk = true; pushOkAt = Date.now(); pushErr = ''; }
-    else {
-      pushOk = false; pushFails++; pushErr = 'HTTP ' + res.status;
-      console.error('[relay] push rejected:', res.status, (await res.text()).slice(0, 200));
-    }
+    if (!res.ok) console.error('[relay] push rejected:', res.status, (await res.text()).slice(0, 200));
     return res.ok;
   } catch (e) {
-    pushOk = false; pushFails++; pushErr = e.message;
     console.error('[relay] push failed:', e.message);
     return false;
   }
@@ -411,10 +401,11 @@ async function loop() {
   let state;
   try { state = collect(); } catch (e) { console.error('[relay] collect error:', e.message); return; }
   currentJson = JSON.stringify(state);
-  // `system` (host vitals) changes every scan — keep it out of the change
-  // digest so it doesn't turn 15 s heartbeats into 5 s pushes. It rides along
-  // in currentJson, so both the local API and each heartbeat push stay fresh.
-  const { generated_at, system, ...rest } = state;
+  // `vram` (used unified memory) changes every scan — keep it out of the
+  // change digest so it doesn't turn 15 s heartbeats into 5 s pushes. It
+  // rides along in currentJson, so the local API and each heartbeat push
+  // stay fresh.
+  const { generated_at, vram, ...rest } = state;
   const digest = JSON.stringify(rest);
   const changed = digest !== lastDigest;
   lastDigest = digest;

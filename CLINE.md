@@ -28,25 +28,33 @@ Everything here is additive — the original views are untouched.
 - `dashboard/js/live.js` + `js/views/cline.js` + `css/views/cline.css` — the wall itself.
 
 The relay's state doc is v1: `{ v, host, cline_version, generated_at, summary, sessions[],
-teams[], schedules[], system }`. Sessions carry derived state: `running` (fresh activity),
+teams[], schedules[], vram }`. Sessions carry derived state: `running` (fresh activity),
 `waiting` (5+ min silent), `idle`, `done`, `error`.
 
-### System tiles
+### VRAM tile
 
-`system` holds host vitals rendered as a strip of small tiles above the session grid:
+`vram` — `{ name, total_gb, used_gb, pct, level }` — is the single vitals tile
+between the header and the session grid: `pct%` big, `used / total GB · <chip>`
+small, green/amber/red lamp (`crit` pings).
 
-| Tile | Metric | Level thresholds |
-|------|--------|------------------|
-| `cpu_load` | 1/5/15 load averages vs core count | < 1× cores ok, < 2.5× warn, else crit |
-| `memory_pressure` | macOS `memory_pressure` "System-wide memory free percentage" (reclaimable counted); `node:os` free/total fallback (`src` says which) | used < 80% ok, < 90% warn, else crit |
-| `disk` | `df -k /` on the relay host | used < 85% ok, < 95% warn, else crit |
-| `uptime` | host uptime + hostname | always ok |
-| `push` | relay → worker link health (last ok time, fail count, last error) | ok if last push < 60 s, warn if older, crit if failing; hidden when no wall is configured |
+**Apple Silicon semantics:** an M2 Ultra has no discrete VRAM — the GPU shares
+the 64 GB unified pool, and there's no per-GPU counter without root
+(`powermetrics` needs `sudo`, so it's not used). The tile shows used/total
+unified memory, which is exactly what a local model (Ollama, LM Studio, MLX)
+consumes — LM Studio reports the same number as its "VRAM". `pct` comes from
+macOS `memory_pressure` (counts reclaimable pages; raw `os.freemem()` reads a
+healthy Mac as ~100% used) with a `node:os` fallback — `src` says which.
+`name` is `sysctl machdep.cpu.brand_string`, fetched at relay startup.
 
-The `system` block is **excluded from the relay's change digest** (it changes every 5 s
-scan): it refreshes on the local API every scan and rides along in the 15 s heartbeat push,
-without forcing extra R2 writes. Missing metrics (e.g. no `df`) hide their tile — the view
-is fully optional-tolerant.
+| Level | Used unified memory |
+|-------|---------------------|
+| ok | < 80% |
+| warn | < 92% |
+| crit | ≥ 92% |
+
+The `vram` block is **excluded from the relay's change digest** (it changes
+every 5 s scan): it refreshes on the local API every scan and rides along in
+the 15 s heartbeat push, without forcing extra R2 writes.
 
 ## Quickstart (local)
 
