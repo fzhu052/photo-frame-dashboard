@@ -13,3 +13,6 @@ __pycache__/
 *.partial
 *.HEIC
 *.heic
+
+# fork work artifacts
+memory-bank/

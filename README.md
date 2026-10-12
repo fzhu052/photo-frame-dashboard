@@ -38,6 +38,11 @@ It is a Vite web app deployed to Cloudflare Workers, plus `dashboard/kiosk/`: a 
 WebView Android app, built without Gradle, that shows it. Hold two fingers still for 1.5 s to
 exit to the launcher.
 
+**This fork** also turns the dashboard into a live [Cline](https://github.com/cline/cline)
+status wall: a new **Cline** rail item shows running agents, teams, schedules and tokens,
+fed by a zero-dependency relay daemon (`relay/`) that reads `~/.cline`. See
+[CLINE.md](CLINE.md) for setup, security and tuning.
+
 Each is a record of **one unit**. Frames sold under the same name can have different boards
 and firmware. These are not universal flashing guides.
 

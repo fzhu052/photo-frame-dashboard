@@ -9,5 +9,12 @@ export default defineConfig({
     target: 'chrome106',
     cssTarget: 'chrome61',
   },
-  server: { host: true },
+  server: {
+    host: true,
+    // Dev-only: /api/* → local `wrangler dev` (worker + emulated R2). In
+    // production the worker itself serves both the static files and /api/*.
+    proxy: {
+      '/api': process.env.CLINE_API_PROXY || 'http://127.0.0.1:8790',
+    },
+  },
 });

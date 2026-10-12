@@ -2,7 +2,18 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "home-dashboard",
   "compatibility_date": "2026-09-30",
+  "main": "./src/index.js",
   "assets": {
-    "directory": "./dist"
-  }
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  // Cline live state. Locally, `wrangler dev` emulates the bucket. For a real
+  // deployment create it once first:  wrangler r2 bucket create cline-state
+  "r2_buckets": [
+    {
+      "binding": "CLINE",
+      "bucket_name": "cline-state",
+      "preview_bucket_name": "cline-state"
+    }
+  ]
 }
