@@ -292,11 +292,17 @@
   // ------------------------------------------------------------ idle
   App.idle = { home: 60, ambient: 120 };
   var idleSec = 0;
+  // Cline wall on a touchless kiosk: once a state doc has arrived (live or even
+  // stale) the wall holds — no bounce to Home, no ambient dim. It stays a
+  // readable status wall. Never any state doc (relay unreachable) → fall back
+  // to the original photo-frame idle behavior (Home, then ambient).
+  function wallHeld() { return App.current === 'cline' && !!(window.LIVE && window.LIVE.state); }
   function onIdleTick() {
     idleSec++;
     var blocked = $('#takeover').classList.contains('is-open');
     if (App.mode === 'nightdash' && idleSec >= 20) { App.setMode('night'); return; }
     if (App.mode !== 'day' || blocked) return;
+    if (wallHeld()) return;
     if (idleSec === App.idle.home && App.current !== 'home') { App.closeSheet(); App.go('home'); }
     if (idleSec >= App.idle.ambient) {
       App.closeSheet();
@@ -327,7 +333,10 @@
 
   // ------------------------------------------------------------ boot
   App.start = function () {
-    App.setTime(15, 18); // demo default: a busy weekday afternoon
+    var boot = location.hash.slice(1);
+    // Booting at #cline (photo-frame Cline wall): use the real clock and no
+    // demo toast. Everything else keeps the original demo behavior.
+    if (boot !== 'cline') App.setTime(15, 18); // demo default: a busy weekday afternoon
     fit();
     window.addEventListener('resize', fit);
     // Switch tabs the instant a finger lands (pointerdown), not on release. Keyboard "clicks"
@@ -342,12 +351,12 @@
     });
     document.addEventListener('pointerdown', App.resetIdle, true);
     window.addEventListener('hashchange', function () { App.go(location.hash.slice(1)); });
-    App.go(location.hash.slice(1) || 'home');
+    App.go(boot || 'home');
     tick();
     setInterval(tick, 1000);
     App.emit('ready');
     refreshStale(1500);
-    setTimeout(function () { App.toast('Tip: press and hold the <b>clock</b> in the sidebar for demo controls', { ms: 6000, icon: 'bolt' }); }, 1200);
+    if (boot !== 'cline') setTimeout(function () { App.toast('Tip: press and hold the <b>clock</b> in the sidebar for demo controls', { ms: 6000, icon: 'bolt' }); }, 1200);
   };
   document.addEventListener('DOMContentLoaded', function () { App.start(); });
 })();

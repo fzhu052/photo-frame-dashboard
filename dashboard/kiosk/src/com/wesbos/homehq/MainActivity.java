@@ -24,7 +24,12 @@ import android.webkit.WebViewClient;
  */
 public class MainActivity extends Activity {
   static final String TAG = "HomeHQ";
-  static final String DEFAULT_URL = "https://home-dashboard.wesbos.workers.dev/";
+  // This fork: Cline wall on the Mac's LAN (relay running with --lan). /#cline boots
+  // straight into the Cline view (real clock, wall held, no demo toast). Set the IP
+  // to your Mac (`ipconfig getifaddr en0`); frame and Mac must share the Wi-Fi.
+  // Any launch URL can also override this without a rebuild:
+  //   adb shell am start -a android.intent.action.VIEW -d http://<mac-ip>:8799/#cline -n com.wesbos.homehq/.MainActivity
+  static final String DEFAULT_URL = "http://192.168.1.10:8799/#cline";
   static final long EXIT_HOLD_MS = 1500;
   static final float EXIT_SLOP_PX = 60;
 

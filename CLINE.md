@@ -71,8 +71,23 @@ public deployment.
 ## Photo frame (Android)
 
 The kiosk WebView (Chromium 106) runs this dashboard unchanged — `:8799` serves it as a
-static site and `live.js` polls the same-origin `/api/cline`. Point the APK's
-`DEFAULT_URL` at `http://<mac-lan-ip>:8799` (start the relay with `--lan`).
+static site and `live.js` polls the same-origin `/api/cline`. Point the kiosk's
+`DEFAULT_URL` (`kiosk/src/com/wesbos/homehq/MainActivity.java`) at
+`http://<mac-lan-ip>:8799/#cline` (start the relay with `--lan`) — or skip the rebuild and
+launch with `adb shell am start -a android.intent.action.VIEW -d http://<mac-lan-ip>:8799/#cline
+-n com.wesbos.homehq/.MainActivity`.
+
+The `#cline` hash is what makes the frame a *wall*:
+
+- boots straight into the Cline view with the **real clock** (the original demo's
+  fake 3:18 PM weekday + demo toast only apply to other views);
+- **wall-held rule** (`app.js` → `wallHeld()`): once any state doc has arrived,
+  idle logic never bounces the wall back to Home and never dims it to ambient —
+  the wall stays bright and readable. Stale feed = amber indicator on the wall,
+  last known state stays visible.
+- If the relay was never reached (no state doc), the original photo-frame idle
+  behavior applies: after 60 s idle it returns to Home and, at 2 min, dims to
+  ambient — i.e. it's a photo frame again until the relay comes back.
 
 ## Security model
 
