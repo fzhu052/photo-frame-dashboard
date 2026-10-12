@@ -28,8 +28,25 @@ Everything here is additive — the original views are untouched.
 - `dashboard/js/live.js` + `js/views/cline.js` + `css/views/cline.css` — the wall itself.
 
 The relay's state doc is v1: `{ v, host, cline_version, generated_at, summary, sessions[],
-teams[], schedules[] }`. Sessions carry derived state: `running` (fresh activity),
+teams[], schedules[], system }`. Sessions carry derived state: `running` (fresh activity),
 `waiting` (5+ min silent), `idle`, `done`, `error`.
+
+### System tiles
+
+`system` holds host vitals rendered as a strip of small tiles above the session grid:
+
+| Tile | Metric | Level thresholds |
+|------|--------|------------------|
+| `cpu_load` | 1/5/15 load averages vs core count | < 1× cores ok, < 2.5× warn, else crit |
+| `memory_pressure` | macOS `memory_pressure` "System-wide memory free percentage" (reclaimable counted); `node:os` free/total fallback (`src` says which) | used < 80% ok, < 90% warn, else crit |
+| `disk` | `df -k /` on the relay host | used < 85% ok, < 95% warn, else crit |
+| `uptime` | host uptime + hostname | always ok |
+| `push` | relay → worker link health (last ok time, fail count, last error) | ok if last push < 60 s, warn if older, crit if failing; hidden when no wall is configured |
+
+The `system` block is **excluded from the relay's change digest** (it changes every 5 s
+scan): it refreshes on the local API every scan and rides along in the 15 s heartbeat push,
+without forcing extra R2 writes. Missing metrics (e.g. no `df`) hide their tile — the view
+is fully optional-tolerant.
 
 ## Quickstart (local)
 

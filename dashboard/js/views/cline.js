@@ -130,6 +130,42 @@
     return h;
   }
 
+  function fmtUp(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d) return d + 'd ' + h + 'h';
+    if (h) return h + 'h ' + m + 'm';
+    if (m) return m + 'm';
+    return sec + 's';
+  }
+  function fmtSizeGb(gb) {
+    gb = gb || 0;
+    return gb >= 1024 ? (gb / 1024).toFixed(gb >= 10240 ? 0 : 1) + ' TB' : Math.round(gb) + ' GB';
+  }
+  function tile(key, val, sub, level) {
+    return '<div class="cl-tile lv-' + (level || 'ok') + '">' +
+      '<span class="cl-tile-key">' + key + '</span><span class="cl-tile-lamp"></span>' +
+      '<span class="cl-tile-val num">' + val + '</span>' +
+      '<span class="cl-tile-sub">' + sub + '</span></div>';
+  }
+  function tilesHtml(sys) {
+    var h = '';
+    var c = sys.cpu;
+    if (c) h += tile('cpu_load', c.load[0], c.cores + ' cores · 5m ' + c.load[1], c.level);
+    var m = sys.mem;
+    if (m) h += tile('memory_pressure', m.free_pct + '% free', fmtSizeGb(Math.round(m.total_mb / 1024)) + ' · ' + fmtSizeGb(Math.round(m.free_mb / 1024)) + ' free', m.level);
+    var d = sys.disk;
+    if (d) h += tile('disk', d.used_pct + '% used', fmtSizeGb(d.free_gb) + ' free of ' + fmtSizeGb(d.total_gb), d.level);
+    if (sys.uptime_s != null) h += tile('uptime', fmtUp(sys.uptime_s), esc(sys.host || ''), 'ok');
+    var p = sys.push;
+    if (p && p.enabled) {
+      h += tile('push', p.ok ? 'ok' : 'fail',
+        p.ok ? 'last ok ' + rel(p.last_ok_at) : (p.last_err ? esc(String(p.last_err).slice(0, 30)) : (p.fails || 0) + ' fails'),
+        p.level);
+    }
+    return h;
+  }
+
   function syncEl() {
     var sync = V.el && V.el.querySelector('[data-sync]');
     if (!sync) return;
@@ -154,6 +190,7 @@
     var root = el.querySelector('.cl');
     if (!s) {
       root.classList.add('is-off');
+      el.querySelector('[data-tiles]').innerHTML = '';
       el.querySelector('[data-empty]').innerHTML =
         '<div class="cl-empty-card card">' + App.icon('cline', 44) +
         '<b>No live feed yet</b>' +
@@ -162,6 +199,7 @@
         '</div>';
     } else {
       root.classList.remove('is-off');
+      el.querySelector('[data-tiles]').innerHTML = s.system ? tilesHtml(s.system) : '';
       el.querySelector('[data-sessions]').innerHTML = (s.sessions || []).slice(0, 6).map(cardHtml).join('');
       el.querySelector('[data-side]').innerHTML = sideHtml(s);
     }
@@ -195,6 +233,7 @@
                 '<button class="icon-btn" data-refresh aria-label="Refresh feed">' + App.icon('left', 24) + '</button>' +
               '</div>' +
             '</header>' +
+            '<div class="cl-tiles" data-tiles></div>' +
             '<div class="cl-body">' +
               '<div class="cl-sessions" data-sessions></div>' +
               '<aside class="cl-side" data-side></aside>' +

@@ -86,6 +86,25 @@
 .cl-task b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; color: var(--ink-2); }
 .cl-task span { font-size: 12px; font-weight: 800; color: var(--mute); text-transform: uppercase; letter-spacing: .04em; flex: none; }
 
+/* ---- system tiles ------------------------------------------------------ */
+.cl-tiles { flex: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.cl-tiles:empty { display: none; }
+.cl-tile {
+  --st: var(--mute);
+  position: relative;
+  background: var(--card); border-radius: 12px; padding: 9px 14px 8px;
+  display: flex; flex-direction: column; gap: 3px; overflow: hidden; min-width: 0;
+}
+.cl-tile.lv-ok   { --st: var(--ok); }
+.cl-tile.lv-warn { --st: var(--amber); }
+.cl-tile.lv-crit { --st: var(--alert); }
+.cl-tile-lamp { position: absolute; top: 11px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--st); }
+.cl-tile.lv-crit .cl-tile-lamp { animation: cl-ping 1.6s var(--ease) infinite; }
+.cl-tile-key { font: 800 11px/1.2 ui-monospace, Menlo, monospace; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); padding-right: 16px; }
+.cl-tile-val { font-size: 22px; font-weight: 900; line-height: 1; white-space: nowrap; }
+.cl-tile.lv-crit .cl-tile-val { color: var(--alert); }
+.cl-tile-sub { font-size: 11px; font-weight: 600; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---- empty / offline ----------------------------------------------------- */
 .cl-empty { display: none; position: absolute; left: 0; right: 0; top: 92px; bottom: 0; align-items: center; justify-content: center; background: var(--paper); z-index: 2; }
 .cl.is-off .cl-empty { display: flex; }

@@ -35,7 +35,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -250,6 +250,44 @@ function collectTeams() {
     .slice(0, 6);
 }
 
+// ---------------------------------------------------------------- system
+// Host vitals for the wall's tile strip. Every field is optional-tolerant —
+// the view hides a tile when its metric is missing. `memory_pressure` uses
+// macOS's /usr/bin/memory_pressure ("System-wide memory free percentage",
+// which counts reclaimable pages); falls back to node:os free/total.
+function lvl(x, okAt, warnAt) {
+  return x == null || !isFinite(x) ? null : x < okAt ? 'ok' : x < warnAt ? 'warn' : 'crit';
+}
+function collectSystem() {
+  const cores = os.cpus().length;
+  const load = os.loadavg();
+  const total = os.totalmem(), free = os.freemem();
+  let freePct = Math.round((free / total) * 1000) / 10, memSrc = 'node';
+  if (process.platform === 'darwin') {
+    try {
+      const out = execFileSync('/usr/bin/memory_pressure', [], { encoding: 'utf8', timeout: 3000 });
+      const m = out.match(/System-wide memory free percentage:\s*([\d.]+)%/i);
+      if (m) { freePct = parseFloat(m[1]); memSrc = 'macos'; }
+    } catch { /* keep the node estimate */ }
+  }
+  let disk = null;
+  try {
+    const out = execFileSync('df', ['-k', '/'], { encoding: 'utf8', timeout: 3000 });
+    const p = out.trim().split('\n').pop().split(/\s+/);
+    if (p.length >= 5) disk = { total_gb: Math.round(+p[1] / 1048576), free_gb: Math.round(+p[3] / 1048576), used_pct: parseInt(p[4], 10) };
+  } catch { /* leave disk null */ }
+  return {
+    cpu: { cores, load: load.map((x) => Math.round(x * 100) / 100), level: lvl(load[0] / cores, 1, 2.5) },
+    mem: { total_mb: Math.round(total / 1048576), free_mb: Math.round(free / 1048576), free_pct: freePct, src: memSrc, level: lvl(100 - freePct, 80, 90) },
+    disk: disk ? { ...disk, level: lvl(disk.used_pct, 85, 95) } : null,
+    uptime_s: Math.floor(os.uptime()),
+    push: WALL_URL
+      ? { enabled: true, ok: pushOk, last_ok_at: pushOkAt || null, fails: pushFails, last_err: pushErr || null,
+          level: pushOk === true ? (Date.now() - pushOkAt < 60000 ? 'ok' : 'warn') : 'crit' }
+      : { enabled: false },
+  };
+}
+
 function collectSchedules() {
   const s = dbAll('sessions.db', 'SELECT schedule_id, name, cron_pattern, enabled, last_run_at, next_run_at FROM schedules LIMIT 12') || [];
   const ex = dbAll('sessions.db', 'SELECT schedule_id, status, tokens_used, cost_usd, triggered_at FROM schedule_executions ORDER BY triggered_at DESC LIMIT 40') || [];
@@ -300,10 +338,12 @@ function collect() {
     sessions,
     teams: collectTeams(),
     schedules,
+    system: collectSystem(),
   };
 }
 
 // ------------------------------------------------------------------- push
+let pushOk = null, pushOkAt = 0, pushFails = 0, pushErr = '';
 async function push(json) {
   if (!WALL_URL) return true;
   try {
@@ -315,9 +355,14 @@ async function push(json) {
       },
       body: json,
     });
-    if (!res.ok) console.error('[relay] push rejected:', res.status, (await res.text()).slice(0, 200));
+    if (res.ok) { pushOk = true; pushOkAt = Date.now(); pushErr = ''; }
+    else {
+      pushOk = false; pushFails++; pushErr = 'HTTP ' + res.status;
+      console.error('[relay] push rejected:', res.status, (await res.text()).slice(0, 200));
+    }
     return res.ok;
   } catch (e) {
+    pushOk = false; pushFails++; pushErr = e.message;
     console.error('[relay] push failed:', e.message);
     return false;
   }
@@ -366,7 +411,10 @@ async function loop() {
   let state;
   try { state = collect(); } catch (e) { console.error('[relay] collect error:', e.message); return; }
   currentJson = JSON.stringify(state);
-  const { generated_at, ...rest } = state;
+  // `system` (host vitals) changes every scan — keep it out of the change
+  // digest so it doesn't turn 15 s heartbeats into 5 s pushes. It rides along
+  // in currentJson, so both the local API and each heartbeat push stay fresh.
+  const { generated_at, system, ...rest } = state;
   const digest = JSON.stringify(rest);
   const changed = digest !== lastDigest;
   lastDigest = digest;
