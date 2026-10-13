@@ -38,10 +38,53 @@ It is a Vite web app deployed to Cloudflare Workers, plus `dashboard/kiosk/`: a 
 WebView Android app, built without Gradle, that shows it. Hold two fingers still for 1.5 s to
 exit to the launcher.
 
-**This fork** also turns the dashboard into a live [Cline](https://github.com/cline/cline)
-status wall: a new **Cline** rail item shows running agents, teams, schedules and tokens,
-fed by a zero-dependency relay daemon (`relay/`) that reads `~/.cline`. See
-[CLINE.md](CLINE.md) for setup, security and tuning.
+## Cline live wall (this fork)
+
+This fork turns the dashboard into a live [Cline](https://github.com/cline/cline) status
+wall: a new **Cline** rail item shows what your Cline agents are doing right now. Everything
+is additive — the original views are untouched and still run on mock data.
+
+**What the Cline view shows**
+
+- One card per session: status lamp (running / waiting / idle / done / error), agent, team,
+  model, workspace, the three most recent tool actions, token and cost totals, last-activity.
+- A single vitals tile between the header and the grid: unified-memory ("VRAM") usage with an
+  ok/warn/crit lamp. On Apple Silicon there is no discrete VRAM — the number shown is the
+  unified pool Ollama / LM Studio report as VRAM.
+- Side column: today's totals (active sessions, tokens, cost), the team task board, and
+  scheduled runs with their next fire time.
+- A header indicator stays green while the feed is fresh and turns amber when it goes stale.
+
+**How the data gets there**
+
+```
+~/.cline (SQLite DBs + message files, read-only)
+        │ poll 5 s
+        ▼
+relay/index.mjs ──── PUT /api/push ────▶ Cloudflare Worker ──▶ R2 (state doc)
+ (Node ≥ 22.5, zero deps)                   │
+        │            also: GET /api/cline ◀─┘
+        ▼                     │ poll 15 s
+:8799 serves the built        ▼
+dashboard from the relay   dashboard (this code, incl. the frame's WebView)
+```
+
+The relay reads Cline's data, redacts anything that looks like a secret, and ships a small
+JSON doc — pushed to the deployed worker on change (plus a 15 s heartbeat), and/or served
+locally so a LAN photo frame can load the whole wall straight from the relay. A wall-held
+idle rule keeps a fed wall bright: it never bounces back to Home and never dims to ambient
+while the feed is alive.
+
+**Three ways to run it**
+
+| Target | How |
+| --- | --- |
+| Local only | `cd dashboard && npm i && npm run build`, then `node relay/index.mjs` → open `http://127.0.0.1:8799` |
+| Cloudflare worker | In `dashboard/`: `npm run build`, `wrangler r2 bucket create cline-state`, `wrangler secret put CLINE_SECRET`, `wrangler deploy`; then run the relay with `CLINE_WALL_URL` + `CLINE_WALL_SECRET` |
+| Photo frame (Android) | Relay with `--lan`; kiosk `DEFAULT_URL` → `http://<mac-lan-ip>:8799/#cline` (shipped as a placeholder — set it, or override with `adb shell am start …`, no rebuild needed) |
+
+Full setup, security model, tuning knobs and troubleshooting are in
+[CLINE.md](CLINE.md).
 
 Each is a record of **one unit**. Frames sold under the same name can have different boards
 and firmware. These are not universal flashing guides.
